@@ -1,2 +1,8 @@
-# vulnSCAN
-# vulnSCAN
+- **Open Port Scanning:** Checks for open ports on the target web address.
+- **Banner Grabbing:** Retrieves service banners for open ports to help identify running services.
+- **Outdated Software Detection:** Analyzes service banners to detect outdated software versions.
+- **SSL/TLS Check:** Validates SSL/TLS configuration for HTTPS ports.
+- **HTTP Security Headers:** Checks for common security headers to enhance security.
+- **Common Sensitive Files Check:** Identifies common sensitive files that may be exposed.
+- **SQL Injection and XSS Testing:** Tests the target for SQL injection and cross-site scripting vulnerabilities.
+- **Report Generation:** Outputs scan results to a JSON report.
