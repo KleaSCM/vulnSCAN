@@ -1,4 +1,3 @@
-// reports/report.go
 package reports
 
 import (
