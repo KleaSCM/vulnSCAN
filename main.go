@@ -2,19 +2,20 @@ package main
 
 import (
 	"fmt"
-	"vulnscanner/reports"
-	"vulnscanner/scanner"
+	"vulnSCAN/reports"
+	"vulnSCAN/scanner"
 )
 
 func main() {
+	// Target host for the scan
 	host := "example.com"
 
-	// Step 1: Scan open ports
+	// Step 1: Scan for open ports
 	ports := []int{80, 443, 22, 8080}
 	openPorts := scanner.ScanPorts(host, ports)
 	fmt.Println("Open ports:", openPorts)
 
-	// Step 2: Grab banners for open ports
+	// Step 2: Banner grabbing for open ports
 	for port, isOpen := range openPorts {
 		if isOpen {
 			banner := scanner.GrabBanner(host, port)
@@ -23,7 +24,7 @@ func main() {
 			// Step 3: Detect outdated software based on banners
 			scanner.DetectOutdatedSoftware(banner)
 
-			// Step 4: SSL/TLS check for HTTPS ports
+			// Step 4: SSL/TLS check for HTTPS ports (like 443)
 			if port == 443 {
 				scanner.CheckTLS(host, port)
 			}
@@ -38,22 +39,22 @@ func main() {
 	fmt.Println("\nChecking for common sensitive files...")
 	scanner.CheckCommonFiles("http://" + host)
 
-	// Step 7: Perform SQLi and XSS tests
+	// Step 7: Basic testing for SQL Injection and XSS vulnerabilities
 	fmt.Println("\nTesting for SQL Injection and XSS vulnerabilities...")
 	scanner.TestSQLi("http://" + host)
 	scanner.TestXSS("http://" + host)
 
-	// Generate report
+	// Step 8: Generate a report with the scan results
 	report := reports.ScanReport{
 		Host:      host,
 		OpenPorts: openPorts,
-		// Collecting a dummy header response for now. Populate real headers in real scenarios.
+		// Example: Add collected HTTP headers (use real headers during the actual scan)
 		HTTPHeaders: map[string]string{
 			"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 		},
 	}
 
-	// Step 8: Output the results to a JSON file
+	// Output the results to a JSON file
 	fmt.Println("\nGenerating JSON report...")
 	reports.GenerateJSONReport(report, "scan_report.json")
 	fmt.Println("Report saved to scan_report.json")
