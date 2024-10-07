@@ -8,7 +8,7 @@ import (
 
 func main() {
 	// Target host for the scan
-	host := "example.com"
+	host := "https://us.shop.battle.net/en-us?from=root"
 
 	// Step 1: Scan for open ports
 	ports := []int{80, 443, 22, 8080}
