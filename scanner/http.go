@@ -5,11 +5,13 @@ import (
 	"net/http"
 )
 
-func CheckHTTPHeaders(url string) {
+// GetHTTPHeaders checks security headers and returns them
+func GetHTTPHeaders(url string) map[string]string {
+	headers := make(map[string]string)
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Printf("Failed to fetch %s: %v\n", url, err)
-		return
+		headers["error"] = fmt.Sprintf("Failed to fetch %s: %v", url, err)
+		return headers
 	}
 	defer resp.Body.Close()
 
@@ -20,12 +22,13 @@ func CheckHTTPHeaders(url string) {
 		"X-Frame-Options",
 	}
 
-	fmt.Println("Security headers detected:")
 	for _, header := range securityHeaders {
 		if val := resp.Header.Get(header); val != "" {
-			fmt.Printf("%s: %s\n", header, val)
+			headers[header] = val
 		} else {
-			fmt.Printf("%s: MISSING\n", header)
+			headers[header] = "MISSING"
 		}
 	}
+
+	return headers
 }
