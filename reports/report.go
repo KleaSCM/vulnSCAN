@@ -1,3 +1,6 @@
+// Package reports provides functionality for generating and displaying security scan reports
+// in multiple formats including HTML, JSON, and plain text. It handles both the web interface
+// for displaying real-time scan results and the generation of downloadable report files.
 package reports
 
 import (
@@ -10,16 +13,36 @@ import (
 	"vulnSCAN/scanner"
 )
 
+// Severity represents the security impact level of a vulnerability
+type Severity string
+
+const (
+	Low    Severity = "Low"    // Minor security concerns
+	Medium Severity = "Medium" // Significant but not critical issues
+	High   Severity = "High"   // Critical security vulnerabilities
+)
+
+// Vulnerability represents a detected security issue with metadata
+type Vulnerability struct {
+	Name        string   `json:"name"`        // Name of the vulnerability
+	Description string   `json:"description"` // Detailed description of the issue
+	Severity    Severity `json:"severity"`    // Impact level of the vulnerability
+	Found       bool     `json:"found"`       // Whether the vulnerability was detected
+}
+
 // ScanReport defines the structure of the scan report.
 type ScanReport struct {
-	Host           string            `json:"host"`
-	OpenPorts      map[int]bool      `json:"open_ports"`
-	HTTPHeaders    map[string]string `json:"http_headers"`
-	Banners        map[int]string    `json:"banners"`
-	CrawlResults   []string          `json:"crawl_results"`
-	SQLiVulnerable bool              `json:"sql_injection_vulnerable"`
-	XSSVulnerable  bool              `json:"xss_vulnerable"`
-	SSLInfo        map[string]string `json:"ssl_info"`
+	Host            string                   `json:"host"`
+	OpenPorts       map[int]bool             `json:"open_ports"`
+	HTTPHeaders     map[string]string        `json:"http_headers"`
+	Banners         map[int]string           `json:"banners"`
+	CrawlResults    []string                 `json:"crawl_results"`
+	Vulnerabilities map[string]Vulnerability `json:"vulnerabilities"`
+	SSLInfo         map[string]string        `json:"ssl_info"`
+	MissingHeaders  []Vulnerability          `json:"missing_headers"`
+	ExposedFiles    []scanner.FileExposure   `json:"exposed_files"` // Updated type
+	RobotsInfo      *scanner.RobotsInfo      `json:"robots_info"`   // Added robots.txt info
+	DiscoveredPages []scanner.PageInfo       `json:"discovered_pages"`
 }
 
 // HTML template for displaying reports
@@ -107,6 +130,75 @@ const reportTemplate = `
             background-color: #e8f5e9;
             color: #2e7d32;
         }
+        .severity-high {
+            background-color: #ffebee;
+            color: #c62828;
+            border-left: 4px solid #c62828;
+        }
+        .severity-medium {
+            background-color: #fff3e0;
+            color: #ef6c00;
+            border-left: 4px solid #ef6c00;
+        }
+        .severity-low {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border-left: 4px solid #2e7d32;
+        }
+        .vulnerability-item {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+        }
+        .discovered-pages {
+            margin-top: 15px;
+        }
+        .page-item {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid #e9ecef;
+        }
+        .page-item h3 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+        }
+        .page-item a {
+            color: #007bff;
+            text-decoration: none;
+        }
+        .page-item a:hover {
+            text-decoration: underline;
+        }
+        .page-details {
+            font-size: 0.9em;
+        }
+        .has-form {
+            color: #28a745;
+            margin: 5px 0;
+        }
+        .keywords {
+            margin-top: 10px;
+        }
+        .keywords ul {
+            list-style: none;
+            padding: 0;
+            margin: 5px 0;
+        }
+        .keywords li {
+            display: inline-block;
+            margin: 2px 5px;
+            padding: 3px 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+        }
+        code {
+            background: #f1f3f5;
+            padding: 2px 5px;
+            border-radius: 3px;
+            color: #e83e8c;
+        }
     </style>
 </head>
 <body>
@@ -163,12 +255,24 @@ const reportTemplate = `
 
         <div class="section">
             <h2>Security Vulnerabilities</h2>
-            <div class="vulnerability {{if .SQLiVulnerable}}vulnerable{{else}}safe{{end}}">
-                SQL Injection: {{if .SQLiVulnerable}}Vulnerable{{else}}Safe{{end}}
-            </div>
-            <div class="vulnerability {{if .XSSVulnerable}}vulnerable{{else}}safe{{end}}">
-                XSS: {{if .XSSVulnerable}}Vulnerable{{else}}Safe{{end}}
-            </div>
+            {{range $name, $vuln := .Vulnerabilities}}
+                <div class="vulnerability-item severity-{{lower $vuln.Severity}}">
+                    <strong>{{$vuln.Name}}</strong>: {{$vuln.Description}}
+                    <br>
+                    <small>Severity: {{$vuln.Severity}}</small>
+                </div>
+            {{end}}
+        </div>
+
+        <div class="section">
+            <h2>Missing Security Headers</h2>
+            {{range .MissingHeaders}}
+                <div class="vulnerability-item severity-{{lower .Severity}}">
+                    <strong>{{.Name}}</strong>: {{.Description}}
+                    <br>
+                    <small>Severity: {{.Severity}}</small>
+                </div>
+            {{end}}
         </div>
 
         <div class="section">
@@ -176,6 +280,42 @@ const reportTemplate = `
             <ul>
                 {{range $key, $value := .SSLInfo}}
                 <li><strong>{{$key}}:</strong> {{$value}}</li>
+                {{end}}
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>Discovered Pages</h2>
+            <div class="discovered-pages">
+                {{range .DiscoveredPages}}
+                <div class="page-item">
+                    <h3><a href="{{.URL}}" target="_blank">{{.PageTitle}}</a></h3>
+                    <div class="page-details">
+                        <p class="url"><strong>URL:</strong> {{.URL}}</p>
+                        {{if .HasForm}}
+                        <p class="has-form">📝 Contains form submission</p>
+                        {{end}}
+                        {{if .Keywords}}
+                        <div class="keywords">
+                            <strong>🔍 Found Keywords:</strong>
+                            <ul>
+                            {{range .Keywords}}
+                                <li><code>{{.}}</code></li>
+                            {{end}}
+                            </ul>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Exposed Files</h2>
+            <ul>
+                {{range .ExposedFiles}}
+                <li><strong>{{.Path}}</strong> (Status: {{.StatusCode}})</li>
                 {{end}}
             </ul>
         </div>
@@ -191,10 +331,12 @@ const reportTemplate = `
 </html>
 `
 
-// handleReport serves the HTML report page by processing the scan form submission,
-// performing security scans on the provided host (including port scanning, banner grabbing,
-// HTTP header checks, crawling, vulnerability testing, and SSL/TLS analysis), and
-// rendering the results using the HTML template
+// handleReport processes scan requests and generates the security report
+// This function:
+// 1. Handles both GET (form display) and POST (scan execution) requests
+// 2. Coordinates all security scanning operations
+// 3. Generates reports in multiple formats
+// 4. Renders results in the web interface
 func handleReport(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		host := r.FormValue("host")
@@ -234,7 +376,7 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 		headers := scanner.GetHTTPHeaders(baseURL)
 
 		// Perform crawl
-		crawlResults := scanner.CrawlURLs(baseURL)
+		crawlResults, robotsInfo := scanner.CrawlURLs(baseURL)
 
 		// Test for vulnerabilities
 		sqliVulnerable := scanner.TestSQLiVulnerability(baseURL)
@@ -243,16 +385,70 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 		// Check SSL/TLS
 		sslInfo := scanner.GetSSLInfo(hostname, 443)
 
+		// Create vulnerabilities map
+		vulnerabilities := make(map[string]Vulnerability)
+
+		// SQL Injection check
+		if sqliVulnerable {
+			vulnerabilities["sql_injection"] = Vulnerability{
+				Name:        "SQL Injection",
+				Description: "Application appears vulnerable to SQL injection attacks",
+				Severity:    High,
+				Found:       true,
+			}
+		}
+
+		// XSS check
+		if xssVulnerable {
+			vulnerabilities["xss"] = Vulnerability{
+				Name:        "Cross-Site Scripting (XSS)",
+				Description: "Application appears vulnerable to cross-site scripting attacks",
+				Severity:    Medium,
+				Found:       true,
+			}
+		}
+
+		// Check for missing security headers
+		missingHeaders := []Vulnerability{}
+		criticalHeaders := map[string]Vulnerability{
+			"Strict-Transport-Security": {
+				Name:        "Missing HSTS Header",
+				Description: "The HTTP Strict Transport Security header is not set",
+				Severity:    Low,
+			},
+			"Content-Security-Policy": {
+				Name:        "Missing CSP Header",
+				Description: "The Content Security Policy header is not set",
+				Severity:    Low,
+			},
+			"X-Frame-Options": {
+				Name:        "Missing X-Frame-Options Header",
+				Description: "The X-Frame-Options header is not set",
+				Severity:    Low,
+			},
+		}
+
+		for header, vuln := range criticalHeaders {
+			if headers[header] == "MISSING" {
+				missingHeaders = append(missingHeaders, vuln)
+			}
+		}
+
+		// Check for exposed files
+		exposedFiles := scanner.CheckCommonFiles(baseURL)
+
 		// Create the report
 		report := ScanReport{
-			Host:           host,
-			OpenPorts:      openPorts,
-			HTTPHeaders:    headers,
-			Banners:        banners,
-			CrawlResults:   crawlResults,
-			SQLiVulnerable: sqliVulnerable,
-			XSSVulnerable:  xssVulnerable,
-			SSLInfo:        sslInfo,
+			Host:            host,
+			OpenPorts:       openPorts,
+			HTTPHeaders:     headers,
+			Banners:         banners,
+			CrawlResults:    crawlResults,
+			Vulnerabilities: vulnerabilities,
+			SSLInfo:         sslInfo,
+			MissingHeaders:  missingHeaders,
+			ExposedFiles:    exposedFiles,
+			RobotsInfo:      robotsInfo,
 		}
 
 		// Generate JSON and text report files with sanitized hostname in filename
@@ -268,7 +464,9 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 		GenerateTextReport(report, textFilename)
 
 		// Display the report
-		tmpl, err := template.New("report").Parse(reportTemplate)
+		tmpl, err := template.New("report").Funcs(template.FuncMap{
+			"lower": strings.ToLower,
+		}).Parse(reportTemplate)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -281,7 +479,9 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle GET request - show the form
-	tmpl, err := template.New("report").Parse(reportTemplate)
+	tmpl, err := template.New("report").Funcs(template.FuncMap{
+		"lower": strings.ToLower,
+	}).Parse(reportTemplate)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -292,7 +492,10 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GenerateJSONReport creates a JSON report file from the given ScanReport.
+// GenerateJSONReport creates a detailed JSON report file from the scan results
+// Parameters:
+//   - report: The completed ScanReport structure
+//   - filename: The target filename for the JSON report
 func GenerateJSONReport(report ScanReport, filename string) {
 	file, err := os.Create(filename)
 	if err != nil {
@@ -308,7 +511,18 @@ func GenerateJSONReport(report ScanReport, filename string) {
 	}
 }
 
-// GenerateTextReport creates a text report file from the given ScanReport.
+// GenerateTextReport creates a human-readable text report file
+// Parameters:
+//   - report: The completed ScanReport structure
+//   - filename: The target filename for the text report
+//
+// The text report includes sections for:
+//   - Basic target information
+//   - Open ports and services
+//   - Security headers
+//   - Vulnerabilities
+//   - SSL/TLS configuration
+//   - Exposed files
 func GenerateTextReport(report ScanReport, filename string) {
 	file, err := os.Create(filename)
 	if err != nil {
@@ -371,13 +585,11 @@ func GenerateTextReport(report ScanReport, filename string) {
 		fmt.Printf("Failed to write vulnerabilities header: %v\n", err)
 		return
 	}
-	if _, err = fmt.Fprintf(file, "- SQL Injection: %v\n", report.SQLiVulnerable); err != nil {
-		fmt.Printf("Failed to write SQLi status: %v\n", err)
-		return
-	}
-	if _, err = fmt.Fprintf(file, "- XSS: %v\n", report.XSSVulnerable); err != nil {
-		fmt.Printf("Failed to write XSS status: %v\n", err)
-		return
+	for _, vuln := range report.Vulnerabilities {
+		if _, err = fmt.Fprintf(file, "- %s: %s\n", vuln.Name, vuln.Description); err != nil {
+			fmt.Printf("Failed to write vulnerability entry: %v\n", err)
+			return
+		}
 	}
 
 	if _, err = fmt.Fprintf(file, "\nSSL/TLS Information:\n"); err != nil {
@@ -387,6 +599,17 @@ func GenerateTextReport(report ScanReport, filename string) {
 	for key, value := range report.SSLInfo {
 		if _, err = fmt.Fprintf(file, "- %s: %s\n", key, value); err != nil {
 			fmt.Printf("Failed to write SSL entry: %v\n", err)
+			return
+		}
+	}
+
+	if _, err = fmt.Fprintf(file, "\nExposed Files:\n"); err != nil {
+		fmt.Printf("Failed to write exposed files header: %v\n", err)
+		return
+	}
+	for _, exposedFile := range report.ExposedFiles {
+		if _, err = fmt.Fprintf(file, "- %s (Status: %d)\n", exposedFile.Path, exposedFile.StatusCode); err != nil {
+			fmt.Printf("Failed to write exposed file entry: %v\n", err)
 			return
 		}
 	}

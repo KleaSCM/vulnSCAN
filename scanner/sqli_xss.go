@@ -1,27 +1,31 @@
-// tests attempt SQL injection and XSS by injecting basic payloads
-// in the query string
+// Package scanner provides security scanning capabilities for web applications
 package scanner
 
 import (
-	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 )
 
-// TestSQLiVulnerability tests for SQL injection vulnerabilities using multiple payloads
-// and checks both response codes and error patterns in response bodies
+// TestSQLiVulnerability performs SQL injection testing using multiple techniques:
+// 1. Boolean-based injection: Tests for SQL syntax errors and unexpected responses
+// 2. Time-based injection: Detects delays in response times
+// 3. Union-based injection: Checks for successful UNION queries
+// 4. Error-based injection: Looks for SQL error messages in responses
+//
+// The function returns true if any SQL injection vulnerability is detected.
 func TestSQLiVulnerability(url string) bool {
-	// SQL injection test payloads
+	// SQL injection test payloads targeting different injection techniques
 	payloads := []string{
-		"?id=1' OR '1'='1",
-		"?id=1;--",
-		"?id=1' AND SLEEP(5)--",
-		"?id=1' UNION SELECT NULL--",
+		"?id=1' OR '1'='1",           // Boolean-based injection
+		"?id=1;--",                   // Comment-based injection
+		"?id=1' AND SLEEP(5)--",      // Time-based injection
+		"?id=1' UNION SELECT NULL--", // Union-based injection
 	}
 
-	// Common SQL error patterns
+	// Common SQL error patterns that indicate a vulnerability
 	errorPatterns := []string{
 		"sql syntax",
 		"mysql",
@@ -35,10 +39,12 @@ func TestSQLiVulnerability(url string) bool {
 		"database error",
 	}
 
+	// Configure HTTP client with timeout to prevent hanging
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 
+	// Test each payload and analyze responses
 	for _, payload := range payloads {
 		testURL := url + payload
 		start := time.Now()
@@ -50,7 +56,7 @@ func TestSQLiVulnerability(url string) bool {
 		}
 		defer resp.Body.Close()
 
-		// Read response body
+		// Read and analyze response body
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			continue
@@ -69,9 +75,8 @@ func TestSQLiVulnerability(url string) bool {
 			return true
 		}
 
-		// Check for suspicious response codes
+		// Check for suspicious response codes and union-based injection
 		if resp.StatusCode == 500 || resp.StatusCode == 200 {
-			// Additional check for union-based injection
 			if strings.Contains(payload, "UNION") && len(body) > 0 {
 				return true
 			}
@@ -81,23 +86,66 @@ func TestSQLiVulnerability(url string) bool {
 	return false
 }
 
-// TestXSSVulnerability tests for XSS (Cross-Site Scripting) vulnerabilities by appending a basic
-// XSS payload (<script>alert(1)</script>) to the URL's query string. If the server responds with
-// a 200 OK status code when this payload is injected, it may indicate that the application is
-// vulnerable to XSS attacks since it appears to be accepting and potentially rendering the
-// malicious JavaScript without proper sanitization.
+// TestXSSVulnerability performs Cross-Site Scripting (XSS) testing using multiple techniques:
+// 1. Script tag injection: Tests for basic script execution
+// 2. Event handler injection: Tests for event-based XSS
+// 3. JavaScript protocol injection: Tests for URL-based XSS
+// 4. DOM-based injection: Tests for DOM manipulation
+//
+// The function returns true if any XSS vulnerability is detected.
 func TestXSSVulnerability(url string) bool {
-	testURL := url + "?q=<script>alert(1)</script>"
-	resp, err := http.Get(testURL)
-	if err != nil {
-		fmt.Printf("Failed to test XSS: %v\n", err)
-		return false
+	// XSS test payloads targeting different injection contexts
+	payloads := []string{
+		"<script>alert(1)</script>",                 // Basic script injection
+		"\"><img src=x onerror=alert(1)>",           // Event handler injection
+		"\"><svg/onload=confirm(1)>",                // SVG-based injection
+		"javascript:alert(1)",                       // JavaScript protocol injection
+		"'><script>alert(document.domain)</script>", // DOM-based injection
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == 200 {
-		fmt.Println("Potential XSS vulnerability found at", testURL)
-		return true
+	// Configure HTTP client with timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
 	}
+
+	// Test each payload in different parameter contexts
+	for _, payload := range payloads {
+		testURLs := []string{
+			url + "?q=" + payload,      // Query parameter
+			url + "?search=" + payload, // Search parameter
+			url + "?id=" + payload,     // ID parameter
+		}
+
+		for _, testURL := range testURLs {
+			resp, err := client.Get(testURL)
+			if err != nil {
+				continue
+			}
+			defer resp.Body.Close()
+
+			// Read and analyze response body
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				continue
+			}
+			bodyStr := string(body)
+
+			// Check for payload reflection in response
+			encodedPayload := neturl.QueryEscape(payload)
+			if strings.Contains(bodyStr, payload) ||
+				strings.Contains(bodyStr, encodedPayload) {
+
+				// Additional context checks for successful injection
+				lowerBody := strings.ToLower(bodyStr)
+				if strings.Contains(lowerBody, "<script") ||
+					strings.Contains(lowerBody, "onerror=") ||
+					strings.Contains(lowerBody, "onload=") ||
+					strings.Contains(lowerBody, "javascript:") {
+					return true
+				}
+			}
+		}
+	}
+
 	return false
 }
