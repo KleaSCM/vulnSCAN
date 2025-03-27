@@ -17,17 +17,17 @@ import (
 type Severity string
 
 const (
-	Low    Severity = "Low"    // Minor security concerns
-	Medium Severity = "Medium" // Significant but not critical issues
-	High   Severity = "High"   // Critical security vulnerabilities
+	SeverityLow    = "Low"    // Minor security concerns
+	SeverityMedium = "Medium" // Significant but not critical issues
+	SeverityHigh   = "High"   // Critical security vulnerabilities
 )
 
 // Vulnerability represents a detected security issue with metadata
 type Vulnerability struct {
-	Name        string   `json:"name"`        // Name of the vulnerability
-	Description string   `json:"description"` // Detailed description of the issue
-	Severity    Severity `json:"severity"`    // Impact level of the vulnerability
-	Found       bool     `json:"found"`       // Whether the vulnerability was detected
+	Name        string `json:"name"`        // Name of the vulnerability
+	Description string `json:"description"` // Detailed description of the issue
+	Severity    string `json:"severity"`    // Impact level of the vulnerability (Low/Medium/High)
+	Found       bool   `json:"found"`       // Whether the vulnerability was detected
 }
 
 // ScanReport defines the structure of the scan report.
@@ -393,7 +393,7 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 			vulnerabilities["sql_injection"] = Vulnerability{
 				Name:        "SQL Injection",
 				Description: "Application appears vulnerable to SQL injection attacks",
-				Severity:    High,
+				Severity:    SeverityHigh,
 				Found:       true,
 			}
 		}
@@ -403,7 +403,7 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 			vulnerabilities["xss"] = Vulnerability{
 				Name:        "Cross-Site Scripting (XSS)",
 				Description: "Application appears vulnerable to cross-site scripting attacks",
-				Severity:    Medium,
+				Severity:    SeverityMedium,
 				Found:       true,
 			}
 		}
@@ -414,17 +414,20 @@ func handleReport(w http.ResponseWriter, r *http.Request) {
 			"Strict-Transport-Security": {
 				Name:        "Missing HSTS Header",
 				Description: "The HTTP Strict Transport Security header is not set",
-				Severity:    Low,
+				Severity:    SeverityLow,
+				Found:       true,
 			},
 			"Content-Security-Policy": {
 				Name:        "Missing CSP Header",
 				Description: "The Content Security Policy header is not set",
-				Severity:    Low,
+				Severity:    SeverityLow,
+				Found:       true,
 			},
 			"X-Frame-Options": {
 				Name:        "Missing X-Frame-Options Header",
 				Description: "The X-Frame-Options header is not set",
-				Severity:    Low,
+				Severity:    SeverityLow,
+				Found:       true,
 			},
 		}
 
